@@ -1,0 +1,644 @@
+/*
+*	MINI C Compiler
+*	WRITTEN BY ALIREZA DAVOUDI : DAVOUDIALIREZA [at] GMAIL.COM
+*	STUDENT OF COMPUTER ENGINEERING DEPARTMENT ,
+*	BUSHEHR ,
+*	IRAN
+*
+*/
+
+options
+{
+  static = false;
+  LOOKAHEAD=2;
+  FORCE_LA_CHECK = true;
+}
+
+PARSER_BEGIN(CMM)
+
+package Core;
+
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.Stack;
+
+public class CMM {
+
+	private Stack<pair> expStack = new Stack<pair>();  
+    private Stack<Object> ss = new Stack<Object>();
+    private Stack<ScopeLevel> currentScope = new Stack<ScopeLevel>();
+    private Hashtable<String, String> strings = new Hashtable<String, String>();
+    private Hashtable<String, ArrayList<Code>> functions = new Hashtable<String, ArrayList<Code>>();
+	private String currentFunction;
+	private ArrayList<Code> PB;
+    private int i;
+
+    public static void main(String args[]) throws ParseException, FileNotFoundException {
+        String path = "test";
+        InputStream in = new FileInputStream(path);
+        CMM minij = new CMM(in);
+        minij.start();
+        int k = 0;
+        for (Code c : minij.getPB()) {
+            System.out.println(k + " : " + c);
+            k++;
+        }
+    }
+
+    public int getCurrentAddr() {
+        return Scope.getCurrentAddr();
+    }
+
+	public Hashtable<String, ArrayList<Code>> getFunctions() {
+	  	return functions;	}
+    public String setString(String string) {
+		String name = "STRING" + strings.size();
+
+		StringBuilder value = new StringBuilder( "'" + string.substring(1,string.length() - 1) + "$'");
+
+		int from = 0;
+		while(value.indexOf("\\n",from) != -1)
+		{
+			from = value.indexOf("\\n",from);
+		  	value.replace(from, from+"\\n".length(), "' , CR , LF , '");
+		  	from++;
+		}
+
+		from = 0;
+		while(value.indexOf("\\t",from) != -1)
+		{
+			from = value.indexOf("\\t",from);
+		  	value.replace(from, from+"\\t".length(), "' , TAB , '");
+		  	from++;
+		}
+
+		//remove empty strings
+		from = 0;
+		while(value.indexOf("'' ,",from) != -1)
+		{
+			from = value.indexOf("'' ,",from);
+		  	value.replace(from, from+"'' ,".length(), "");
+		  	from++;
+		}
+		
+       	strings.put(name , value.toString());
+
+       	return name;
+    }
+
+	private void defineFunction(String input) throws ParseException {
+	  	if(functions.containsKey(input))	  	{
+	  	  	throw new ParseException("Function '" + input
+						+ "' has already been defined.");	  	}
+
+		currentFunction = input;
+		
+	  	PB = new ArrayList<Code>();
+	  	i = 0;
+	  	functions.put(input,PB);
+	}
+
+	private void callFunction(String input) throws ParseException {
+	  	if(!functions.containsKey(input))
+	  	{
+	  	  	throw new ParseException("Unknown function '" + input
+				+ "'.define it first.");
+	  	}
+	}
+	
+    public ArrayList<Code> getPB() {
+        return PB;
+    }
+
+    public Hashtable<String, String> getStrings() {
+        return strings;
+    }
+
+    private int getTemp() {
+        int temp = currentScope.peek().getCurrentAddr();
+        currentScope.peek().setCurrentAddr(temp + 2);
+        return temp;
+    }
+
+    private String getAddr(Object s, String first) {
+        String output = getAddr(s);
+        if (output.startsWith("RESERVE + ")) {
+            return first + output;
+        }
+        return output;
+    }
+
+    private String getAddr(Object s) {
+
+        if (s instanceof Integer) {
+            s = (Integer) s;
+
+            return ("RESERVE + " + s.toString());
+        }
+
+        return ((String) s).substring(1);
+    }
+
+	
+
+    private void compare(String input) {
+        int jp3 = (Integer) ss.pop();
+        int jp4 = (Integer) ss.pop();
+        int jp10 = (Integer) ss.pop();
+        int jp11;
+
+        switch (input) {
+            case "==":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("jne", "label" + currentFunction + (i), null));
+                break;
+            case "!=":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("je", "label" + currentFunction + (i), null));
+                break;
+            case "<":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("jge", "label" + currentFunction + (i), null));
+                break;
+            case ">":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("jle", "label" + currentFunction + (i), null));
+                break;
+            case ">=":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("jl", "label" + currentFunction + (i), null));
+                break;
+            case "<=":
+                jp11 = (Integer) ss.pop();
+                PB.set(jp11, new Code("mov", "BX", getAddr(ss.pop())));
+                PB.set(jp10, new Code("mov", "AX", getAddr(ss.pop())));
+                PB.set(jp4, new Code("cmp", "AX", "BX"));
+                PB.set(jp3, new Code("jg", "label" + currentFunction + (i), null));
+                break;
+        }
+
+    }
+
+    private void codeGen(String action, String input) throws ParseException{
+
+        switch (action) {
+
+			case "#makeFunction":
+                defineFunction(input);
+                break;
+            case "#callFunction":
+                callFunction(input);
+                PB.add(new Code("CALL", input,null ));
+                i++;
+                break;
+          	case "#startScopeLevel":
+                currentScope.push(new ScopeLevel());
+                break;
+            case "#endScopeLevel":
+                currentScope.pop();
+                break;
+            case "#scopeStart":
+                currentScope.peek().addScope();
+                break;
+            case "#scopeEnd":
+                currentScope.peek().deleteScope();
+                break;
+            case "#const":
+                ss.push("#" + input);
+                break;
+            case "#variableDef":
+                int a = currentScope.peek().addVariable(input);
+                ss.push(a);
+                break;
+            case "#pid":
+                int p = currentScope.peek().findVariable(input);
+                ss.push(p);
+                break;
+            case "#add":
+                int t = getTemp();
+
+                PB.add(new Code("mov", "CX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("add", "CX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("mov", getAddr(t), "CX"));
+                i++;
+
+                ss.push(t);
+                break;
+            case "#mines":
+                int t1 = getTemp();
+                String str2 = getAddr(ss.pop());
+                PB.add(new Code("mov", "CX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("sub", "CX", str2));
+                i++;
+                PB.add(new Code("mov", getAddr(t1), "CX"));
+                i++;
+                ss.push(t1);
+                break;
+            case "#mul":
+                int t2 = getTemp();
+                PB.add(new Code("mov", "CX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("mov", "AL", getAddr(ss.pop(), "BYTE PTR ")));
+                i++;
+                PB.add(new Code("mul", "CL", null));
+                i++;
+                PB.add(new Code("mov", getAddr(t2), "AX"));
+                i++;
+                ss.push(t2);
+                break;
+            case "#div":
+                int t3 = getTemp();
+                String pa2 = getAddr(ss.pop(), "BYTE PTR ");
+                PB.add(new Code("mov", "AX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("mov", "CL", pa2));
+                i++;
+                PB.add(new Code("div", "CL", null));
+                i++;
+                PB.add(new Code("mov", getAddr(t3, "BYTE PTR "), "AL"));
+                i++;
+                ss.push(t3);
+                break;
+            case "#assign":
+                PB.add(new Code("mov", "AX", getAddr(ss.pop())));
+                i++;
+                PB.add(new Code("mov", getAddr(ss.pop()), "AX"));
+                i++;
+                break;
+            case "#label":
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+                ss.push(i);
+                i++;
+                break;
+            case "#save":
+                PB.add(new Code("save", null, null));
+                ss.push(i);
+                i++;
+                break;
+            case "#save_pointer":
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+                ss.push(i);
+                i++;
+                break;
+            case "#while":
+                compare(input);
+
+                PB.add(new Code("jmp", "label" + currentFunction + ss.pop(), null));
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+                i++;
+                i++;
+                break;
+            case "#until":
+            	compare(input);
+
+            	PB.add(new Code("jmp", "label" + currentFunction + ss.pop(), null));
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+                i++;
+                i++;
+
+                break;
+            case "#jpf_save":
+                compare(input);
+
+                PB.add(new Code("save", null, null));
+                ss.push(i);
+                
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+				i++;
+                i++;
+                break;
+            case "#jp":
+                PB.set((Integer) ss.pop(), new Code("jmp", "label" + currentFunction + i, null));
+                break;
+            case "#jpf":
+				compare(input);
+                
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+                i++;
+                break;
+            case "#jp_statement":
+                PB.add(new Code("jmp", null, null));
+                ss.push(i);
+                i++;
+                break;
+            case "#for_jp_statement":
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));           
+				ss.push(i);
+                i++;
+                break;
+            case "#for":
+                int jp_statement = (Integer) ss.pop();
+                int jp_condition = (Integer) ss.pop();
+                int step_pointer = (Integer) ss.pop();
+                int jp_after_condition = (Integer) ss.pop();
+
+                if(!input.equals("nothing"))                {
+                  	compare(input);                }
+
+                int befor_condition = (Integer) ss.pop();
+
+				PB.set(jp_condition, new Code("jmp", "label" + currentFunction + befor_condition, null));
+				PB.set(jp_after_condition, new Code("jmp", "label" + currentFunction + jp_statement, null));
+
+				PB.add(new Code("jmp", "label" + currentFunction + step_pointer, null));
+                PB.add(new Code("label" + currentFunction + i + ":", null, null));
+				i++;
+                i++;
+                break;
+            case "#print":
+                int pr = (Integer) ss.pop();
+                PB.add(new Code("mov", "AH", "BYTE PTR " + getAddr(pr + 1)));
+                i++;
+                PB.add(new Code("mov", "AL", "BYTE PTR " + getAddr(pr)));
+                i++;
+                PB.add(new Code("CALL", "CONVERT_ASSCII", null));
+                i++;
+                PB.add(new Code("mov", "AH", "09H"));
+                i++;
+                PB.add(new Code("lea", "DX", "ASSCII_NUM"));
+                i++;
+                PB.add(new Code("int", "21H", null));
+                i++;
+                break;
+            case "#printString":
+				String name = setString(input);
+				
+                PB.add(new Code("mov", "AH", "09H"));
+                i++;
+                PB.add(new Code("lea", "DX", name));
+                i++;
+                PB.add(new Code("int", "21H", null));
+                i++;
+                break;
+            case "#pause":
+
+                PB.add(new Code("mov", "AH", "7H"));
+                i++;
+                PB.add(new Code("int", "21H", null));
+                i++;
+                break;
+            case "#cls":
+                PB.add(new Code("CALL", "CLRSCR", null));
+                i++;
+                break;
+            case "#end":
+                PB.add(new Code("label" + currentFunction + i + ": ", null, null));
+                i++;
+                break;
+            case "#inc":
+                PB.add(new Code("INC", getAddr(ss.pop()), null));
+                i++;
+                break;
+            case "#dec":
+                PB.add(new Code("DEC", getAddr(ss.pop()), null));
+                i++;
+                break;
+        }
+
+    }
+    void preStack(pair p) throws ParseException
+    {
+          String part1 = p.part1;
+          switch(part1)          {
+            	case "#add":
+      	  		case "#mines":
+      	  		case "#div":
+      	  		case "#mul":
+      	  			while(!expStack.isEmpty() && precedence(expStack.peek().part1) >= precedence(part1))      	  			{
+      	  			  	pair pa = expStack.pop();
+      	  			  	codeGen(pa.part1,pa.part2);      	  			}
+      	  			expStack.push(p);
+      	  			break;
+      	  		case "#OP":
+      	  			expStack.push(p);
+      	  			break;
+      	  		case "#CP":
+      	  			while(!expStack.peek().part1.equals("#OP") )
+      	  			{
+      	  			  	pair pa = expStack.pop();
+      	  			  	codeGen(pa.part1,pa.part2);
+      	  			}
+      	  			expStack.pop();
+      	  		case "#finish":
+      	  			while(!expStack.isEmpty())
+      	  			{
+      	  			  	pair pa = expStack.pop();
+      	  			  	codeGen(pa.part1,pa.part2);
+      	  			}
+      	  		case "#pid":
+      	  		case "#const":
+      	  			codeGen(p.part1,p.part2);
+      	  			break;          }
+    }
+
+    int precedence(String opt)    {
+      	switch(opt)      	{
+      	  	case "#add":
+      	  	case "#mines":
+      	  		return 1;
+      	  	case "#div":
+      	  	case "#mul":
+      	  		return 2;
+      		default:
+      			return 0;      	}    }
+    class pair    {
+      	public String part1 , part2;
+
+      	public pair(String part1,String part2)      	{
+      	  	this.part1 = part1;
+      	  	this.part2 = part2;      	}
+      	    }
+}
+PARSER_END(CMM)
+
+TOKEN : {
+
+	<IF : "if">
+| 	<ELSE : "else" >
+| 	<FOR : "for" >
+| 	<WHILE : "while" >
+| 	< DO : "do" >
+| 	< INT : "int" >
+| 	< VOID : "void" >
+| 	< MAIN : "main" >
+| 	< PRINT : "print" >
+|   < PAUSE : "pause" >
+|   < CLS : "cls" > 
+	|  <#DIGIT : ["0" - "9"]>
+	|<ID: (["a" - "z"] | "_")  (["a" - "z"] | <DIGIT> | "_")*>
+	|<NUM: (<DIGIT>)+>
+	|<REAL: ((<DIGIT>)+ "." (<DIGIT>)*) | ((<DIGIT>)* "." (<DIGIT>)+)>
+	| < STRING: "\"" (~["\n" , "\r" , "'"])*  "\"">
+}
+
+SKIP :{
+	 < "//" (~["\n" , "\r"])* ("\n" | "\r" | "\r\n")?>
+	| < "/*" (~[])* "*/"> 
+	| " "
+	| "\t"
+	| "\n"
+	| "\r"
+}
+void start() :
+{}
+{
+  	( functionDef() )*
+  	{ codeGen( "#startScopeLevel" , ""); }
+	"void" "main" { codeGen( "#makeFunction" , "main" ); } "(" ")" "{"
+		statement()
+  	"}"{ codeGen( "#end" , ""); }
+  	< EOF >
+}
+
+void functionDef() :
+{}
+{
+  { codeGen( "#startScopeLevel" , ""); }
+  "void" { Token id;} id = < ID > { codeGen( "#makeFunction" , id.image ); } "(" ")" "{"
+		statement()
+  "}"{ codeGen( "#end" , ""); }
+  { codeGen( "#endScopeLevel" , ""); }}
+
+void statement() :
+{}
+{
+  { codeGen( "#scopeStart" , ""); }
+	( 
+		forloop() 
+	  | ifCondition()
+	  | whileLoop()
+	  | DoLoop()
+	  | variableDefine() ";"
+	  | IncDec() ";"
+	  | print()
+	  | pause()
+	  | cls()
+	  | funcCall()
+	)*
+	{ codeGen( "#scopeEnd" , ""); }
+}
+
+void funcCall() :
+{}
+{
+  	{ Token id;} id = < ID >  "(" ")" { codeGen( "#callFunction" , id.image ); } ";"}
+
+void cls() :
+{}
+{
+  	"cls" "("")" ";"{ codeGen( "#cls" , ""); }
+}
+
+void print() :
+{}
+{
+  	
+  	"print" "(" ((E() {preStack(new pair( "#finish" , "" ));}{ codeGen( "#print" , ""); }) | ({Token st;} st = <STRING > { codeGen( "#printString" , st.image); })) ")" ";"
+}
+void pause() :
+{}
+{
+  	"pause" "(" ")" ";" { codeGen( "#pause" , ""); }
+}
+
+void variableDefine() :
+{}
+{
+ (("int" { Token id;} id = < ID > { codeGen( "#variableDef" , id.image ); }) | ({ Token id;} id = < ID > { codeGen( "#pid" , id.image ); }))
+  "=" E() {preStack(new pair( "#finish" , "" ));}{ codeGen( "#assign" , "" ); }
+}
+
+void IncDec() :
+{}
+{
+   { Token id;} id = < ID > { codeGen( "#pid" , id.image ); } ("++" { codeGen( "#inc" , "");} | "--" { codeGen( "#dec" , "");} )
+}
+
+void DoLoop():
+{}
+{
+  {Token op;}
+  "do" "{" { codeGen( "#label" , "" ); }
+  	statement()
+  "}" "while" "(" op = RelationalStatement() { codeGen( "#until" , op.image ); } ")" ";"
+}
+
+void whileLoop():
+{}
+{
+  {Token op;}
+  "while" "(" { codeGen( "#save_pointer" , "" ); } op = RelationalStatement()  ")" "{"
+  	statement()	
+  "}"{ codeGen( "#while" , op.image ); }
+}
+
+void ifCondition() :
+{}
+{
+  	{Token op;}
+ 	"if" "(" op = RelationalStatement()  ")" "{"
+		statement()
+ 	"}" 
+ 	
+	
+	(
+	  ( ( "else" { codeGen( "#jpf_save" , op.image ); }) ( ("{" statement() { codeGen( "#jp" , "" ); }  "}") | statement() { codeGen( "#jp" , "" ); })  )
+	|  { codeGen( "#jpf" , op.image ); } )
+	
+}
+
+void forloop() :
+{}
+{
+  	{Token op = null;}
+	"for" "(" (variableDefine())? ";" { codeGen( "#save_pointer" , "" ); } ( op = RelationalStatement())?  { codeGen( "#save" , "" ); }  ";" { codeGen( "#save_pointer" , "" ); } (( { Token id;} id = < ID > { codeGen( "#pid" , id.image ); } "=" E(){preStack(new pair( "#finish" , "" ));} { codeGen( "#assign" , "" ); }) | IncDec())? { codeGen( "#save" , "" ); }  ")" "{"
+		{ codeGen( "#for_jp_statement" , "" ); }
+		statement()
+	"}" { if(op != null)codeGen( "#for" , op.image );else codeGen( "#for" , "nothing" );} 
+}
+
+Token RelationalStatement():
+{}
+{
+  	{Token op;}
+  	E() {preStack(new pair( "#finish" , "" ));} ( op = "<" | op = ">" | op = "==" | op = "!=" | op = " >=" | op = "<="  ) E() {preStack(new pair( "#finish" , "" ));} { codeGen( "#save" , "" );codeGen( "#save" , "" );codeGen( "#save" , "" );codeGen( "#save" , "" ); }	{return op;}
+}
+
+void E():
+{}
+{
+	(	  (	  ({ Token id1;} id1 = < ID > { preStack(new pair( "#pid" , id1.image )); }| { Token id3;} id3 = < NUM >  { preStack(new pair( "#const" , id3.image )); }  | { Token id4;} id4 = < REAL >  { preStack(new pair( "#const" , id4.image )); })
+	
+		({String op;}
+			(  
+			  "+" { preStack(new pair( "#add" , "" ));}
+			| "-" { preStack(new pair( "#mines" , "" ));}
+			| "*" { preStack(new pair( "#mul" , "" ));}
+			| "/" { preStack(new pair( "#div" , "" ));}
+		)E())?
+	) | ( "(" {preStack(new pair( "#OP" , "" ));} E() ")" {preStack(new pair( "#CP" , "" ));} ))
+		
+	
+}
